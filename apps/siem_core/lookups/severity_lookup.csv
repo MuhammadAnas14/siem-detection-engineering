@@ -1,0 +1,5 @@
+severity,severity_id,color,sla_minutes,escalation
+low,2,#4a90d9,480,SOC tier 1 - review next shift
+medium,3,#f2b01e,120,SOC tier 1 - triage within 2h
+high,4,#e8663c,30,SOC tier 2 - page on-call
+critical,5,#d6453d,15,SOC tier 2 + incident commander

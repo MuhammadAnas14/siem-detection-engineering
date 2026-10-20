@@ -1,0 +1,24 @@
+rule_id,rule_name,mitre_tactic_id,mitre_tactic,mitre_technique_id,mitre_technique,severity,data_source,soc2_control
+UC-01,Brute Force - Windows,TA0006,Credential Access,T1110.001,Brute Force: Password Guessing,medium,WinEventLog:Security 4625/4624,CC6.1
+UC-02,Brute Force - Linux SSH,TA0006,Credential Access,T1110.001,Brute Force: Password Guessing,medium,linux_secure auth.log,CC6.1
+UC-03,Administrative Privilege Assignment,TA0004,Privilege Escalation,T1078.002,Valid Accounts: Domain Accounts,medium,WinEventLog:Security 4672,CC6.3
+UC-04,File Integrity - Protected Paths,TA0005,Defense Evasion,T1222.002,File and Directory Permissions Modification: Linux and Mac,medium,linux_secure / linux_audit,CC7.1
+UC-05,Suspicious PowerShell Execution,TA0002,Execution,T1059.001,Command and Scripting Interpreter: PowerShell,high,PowerShell/Operational 4104,CC7.2
+UC-06,Service Installed From Unusual Path,TA0003,Persistence,T1543.003,Create or Modify System Process: Windows Service,high,WinEventLog:System 7045,CC7.2
+UC-07,Endpoint Malware Detection,TA0002,Execution,T1204.002,User Execution: Malicious File,high,Defender Operational 1116/1117,CC7.1
+UC-08,Repeated Authentication Failures - Linux,TA0006,Credential Access,T1110.003,Brute Force: Password Spraying,medium,linux_secure PAM,CC6.1
+UC-09,DNS Tunnelling,TA0010,Exfiltration,T1048.003,Exfiltration Over Alternative Protocol,high,dns query logs,CC6.7
+UC-10,LOLBin Download via CertUtil,TA0005,Defense Evasion,T1218.009,System Binary Proxy Execution: Regsvcs/Certutil,high,Sysmon EventCode 1 / 4688,CC7.2
+UC-11,Administrative Share Access,TA0008,Lateral Movement,T1021.002,Remote Services: SMB/Windows Admin Shares,medium,WinEventLog:Security 5140,CC6.6
+UC-12,Privileged Group Membership Change,TA0004,Privilege Escalation,T1098.007,Account Manipulation: Additional Local or Domain Groups,high,WinEventLog:Security 4728/4732,CC6.3
+UC-13,Ransomware Behaviour,TA0040,Impact,T1486,Data Encrypted for Impact,critical,WinEventLog:Security 4663,CC7.4
+UC-14,Audit Log Tampering,TA0005,Defense Evasion,T1070.001,Indicator Removal: Clear Windows Event Logs,critical,WinEventLog:Security 1102/104,CC7.3
+UC-15,SQL Injection Attempt,TA0001,Initial Access,T1190,Exploit Public-Facing Application,high,access_combined web logs,CC6.6
+UC-16,Offensive PowerShell Framework Indicators,TA0011,Command and Control,T1059.001,Command and Scripting Interpreter: PowerShell,critical,PowerShell/Operational,CC7.2
+UC-17,Root Session Activity,TA0004,Privilege Escalation,T1078.003,Valid Accounts: Local Accounts,high,linux_secure PAM session,CC6.3
+UC-18,Registry Persistence Key Modified,TA0003,Persistence,T1547.001,Boot or Logon Autostart Execution: Registry Run Keys,medium,WinRegMon / Sysmon 12-14,CC7.2
+UC-19,Host Shutdown or Restart,TA0040,Impact,T1529,System Shutdown/Reboot,low,WinEventLog:System 1074/6008,CC7.4
+OPS-01,Forwarder Stopped Sending Data,TA0005,Defense Evasion,T1562.001,Impair Defenses: Disable or Modify Tools,medium,splunkd tcpin_connections,CC7.2
+OPS-02,Daily Ingestion Report,NA,Operational,NA,Not applicable,low,tstats over primary indexes,CC7.1
+OPS-03,License Usage Approaching Quota,NA,Operational,NA,Not applicable,medium,_internal license_usage.log,A1.1
+OPS-04,Detection Rule Being Skipped,NA,Operational,NA,Not applicable,medium,_internal scheduler.log,CC7.1

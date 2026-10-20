@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# $SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/identities.conf
+#
+# TEMPLATE ONLY - do not commit a filled-in copy.
+#
+# DB Connect encrypts the password against $SPLUNK_HOME/etc/auth/splunk.secret
+# the first time splunkd reads this file: you write plaintext once, then
+# splunkd rewrites the line as `password = $7$...` in place. A committed copy
+# is therefore both a plaintext secret and non-portable, since the ciphertext
+# is keyed to one instance.
+#
+# Prefer the REST provisioning below - it never writes plaintext to disk.
+#
+# Preferred: provision through the DB Connect UI
+#   Configuration > Databases > Identities > New Identity
+# or through the REST endpoint:
+#   curl -k -u admin:<pw> https://localhost:8089/servicesNS/nobody/splunk_app_db_connect/db_connect/identities \
+#        -d name=mysql_splunk_ro -d username=splunk_ro -d password='<password>'
+# ---------------------------------------------------------------------------
+
+[mysql_splunk_ro]
+username = splunk_ro
+# Replace, let splunkd encrypt on restart, then verify it reads `$7$...`.
+password = __SET_AT_DEPLOY_TIME__
+use_win_auth = false
+
+[mssql_splunk_ro]
+username = splunk_ro
+password = __SET_AT_DEPLOY_TIME__
+use_win_auth = false

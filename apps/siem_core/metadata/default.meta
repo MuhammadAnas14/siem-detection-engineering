@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# $SPLUNK_HOME/etc/apps/siem_core/metadata/default.meta
+#
+# Content is shared globally: alerts appear under Settings > Searches, reports
+# and alerts for every analyst, and the lookups resolve from ad-hoc searches
+# run outside this app's context.
+# ---------------------------------------------------------------------------
+
+[]
+access = read : [ * ], write : [ admin, power, soc_engineer ]
+export = system
+
+[savedsearches]
+access = read : [ * ], write : [ admin, power, soc_engineer ]
+export = system
+owner = admin
+
+[views]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+[lookups]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+[transforms]
+access = read : [ * ], write : [ admin ]
+export = system
+
+[props]
+access = read : [ * ], write : [ admin ]
+export = system
+
+[macros]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+[eventtypes]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+[tags]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+[collections]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+[alert_actions]
+access = read : [ * ], write : [ admin ]
+export = system

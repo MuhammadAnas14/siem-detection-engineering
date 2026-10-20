@@ -1,0 +1,135 @@
+<form version="1.1" theme="light">
+  <label>Use Case Catalog</label>
+  <description>
+    Inventory of every deployed rule: schedule, severity, ATT&amp;CK mapping,
+    and whether it has fired. A rule that has never triggered is not
+    necessarily wrong, but it is unproven, and this is where that shows.
+  </description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="tr">
+      <label>Validation window</label>
+      <default>
+        <earliest>-7d@d</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>Rule inventory</title>
+      <table>
+        <search>
+          <query>
+            | rest /servicesNS/-/siem_core/saved/searches splunk_server=local
+            | search eai:acl.app=siem_core title!="default"
+            | rex field=title "^(?&lt;rule_id&gt;(UC|OPS)-\d+)"
+            | eval schedule_type = if(match(search, "rt-") OR 'realtime_schedule'="1", "real-time", "scheduled"),
+                   enabled       = if('disabled'="0", "enabled", "DISABLED"),
+                   sev_label     = case('alert.severity'="5","critical", 'alert.severity'="4","high",
+                                        'alert.severity'="3","medium",   'alert.severity'="2","low",
+                                        true(), "info"),
+                   actions       = 'actions'
+            | join type=left rule_id
+                [ search index=siem_summary
+                  | stats count AS alerts, latest(_time) AS last_fired BY rule_id ]
+            | eval alerts     = coalesce(alerts, 0),
+                   last_fired = if(isnull(last_fired), "never", strftime(last_fired, "%F %T")),
+                   validated  = if(alerts &gt; 0, "validated", "not yet triggered")
+            | lookup mitre_attack_lookup rule_id OUTPUT mitre_tactic, mitre_technique_id, soc2_control
+            | table rule_id, title, enabled, sev_label, schedule_type, cron_schedule,
+                    alerts, last_fired, validated, mitre_tactic, mitre_technique_id,
+                    soc2_control, actions
+            | rename rule_id AS "ID", title AS "Use case", enabled AS "State",
+                     sev_label AS "Severity", schedule_type AS "Type",
+                     cron_schedule AS "Schedule", alerts AS "Alerts",
+                     last_fired AS "Last fired", validated AS "Validation",
+                     mitre_tactic AS "ATT&amp;CK tactic", mitre_technique_id AS "Technique",
+                     soc2_control AS "SOC 2", actions AS "Alert actions"
+            | sort "ID"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="count">30</option>
+        <option name="drilldown">cell</option>
+        <format type="color" field="Severity">
+          <colorPalette type="map">{"critical":#D6453D,"high":#E8663C,"medium":#F2B01E,"low":#4A90D9}</colorPalette>
+        </format>
+        <format type="color" field="Validation">
+          <colorPalette type="map">{"validated":#53A051,"not yet triggered":#C3CBD4}</colorPalette>
+        </format>
+        <format type="color" field="State">
+          <colorPalette type="map">{"enabled":#53A051,"DISABLED":#DC4E41}</colorPalette>
+        </format>
+      </table>
+      <drilldown>
+        <link target="_blank">search?q=search index%3Dsiem_summary rule_id%3D"$row.ID|s$"&amp;earliest=$tr.earliest$&amp;latest=$tr.latest$</link>
+      </drilldown>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Rules proven vs unproven</title>
+      <chart>
+        <search>
+          <query>
+            | rest /servicesNS/-/siem_core/saved/searches splunk_server=local
+            | search eai:acl.app=siem_core title!="default"
+            | rex field=title "^(?&lt;rule_id&gt;(UC|OPS)-\d+)"
+            | join type=left rule_id
+                [ search index=siem_summary | stats count AS alerts BY rule_id ]
+            | eval status = if(coalesce(alerts,0) &gt; 0, "Triggered in window", "Awaiting activity")
+            | stats count BY status
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.fieldColors">{"Triggered in window":0x53a051,"Awaiting activity":0xc3cbd4}</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Rules by severity</title>
+      <chart>
+        <search>
+          <query>
+            | inputlookup mitre_attack_lookup
+            | stats count BY severity
+            | sort severity
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.fieldColors">{"count":0x5a6ab1}</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Alert suppression efficiency</title>
+      <table>
+        <search>
+          <query>
+            index=_internal sourcetype=scheduler app=siem_core alert_actions=*
+            | stats count AS executions, sum(result_count) AS raw_results
+                    BY savedsearch_name
+            | eval suppression_ratio = round(raw_results / executions, 1)
+            | sort - raw_results
+            | head 10
+            | rename savedsearch_name AS "Rule", executions AS "Fires",
+                     raw_results AS "Raw results", suppression_ratio AS "Results per fire"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+</form>

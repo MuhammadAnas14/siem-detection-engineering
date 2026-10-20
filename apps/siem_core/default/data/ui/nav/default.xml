@@ -1,0 +1,23 @@
+<nav search_view="search" color="#5a6ab1">
+  <view name="soc_overview" default="true"/>
+  <view name="use_case_catalog"/>
+  <view name="mitre_attack_coverage"/>
+
+  <collection label="Operations">
+    <view name="forwarder_health"/>
+    <view name="system_health"/>
+  </collection>
+
+  <collection label="Detections">
+    <a href="alerts">All alerts</a>
+    <saved source="unclassified" match="UC-"/>
+  </collection>
+
+  <collection label="Platform health">
+    <saved source="unclassified" match="OPS-"/>
+  </collection>
+
+  <view name="search"/>
+  <view name="reports"/>
+  <view name="alerts"/>
+</nav>

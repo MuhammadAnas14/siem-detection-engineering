@@ -1,0 +1,248 @@
+<form version="1.1" theme="light">
+  <label>Forwarder Health</label>
+  <description>
+    Is the data still arriving? A SIEM fails silently when a forwarder stops:
+    dashboards keep rendering and rules keep showing as enabled. This view and
+    the OPS-01 alert are what make that failure visible.
+  </description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="tr">
+      <label>Time range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <!-- ===================== Check-in status ===================== -->
+  <row>
+    <panel>
+      <title>Forwarder check-in status</title>
+      <table>
+        <search>
+          <query>
+            index=_internal sourcetype=splunkd group=tcpin_connections
+            | eval sourceIp = if(isnull(hostname), sourceHost, hostname)
+            | stats latest(_time) AS last_seen, sum(kb) AS kb_received,
+                    values(version) AS uf_version, values(os) AS os
+                    BY sourceIp, guid
+            | eval minutes_silent = round((now() - last_seen) / 60, 1),
+                   status = case(minutes_silent &gt; 60,  "Inactive",
+                                 minutes_silent &gt; 15,  "Degraded",
+                                 true(),               "Active"),
+                   last_seen = strftime(last_seen, "%F %T"),
+                   mb_received = round(kb_received / 1024, 2)
+            | sort status, sourceIp
+            | table sourceIp, status, last_seen, minutes_silent, mb_received, uf_version, os
+            | rename sourceIp AS "sourceIp", status AS "status",
+                     last_seen AS "Last check-in", minutes_silent AS "Minutes silent",
+                     mb_received AS "MB received", uf_version AS "UF version", os AS "OS"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="drilldown">cell</option>
+        <option name="count">20</option>
+        <format type="color" field="status">
+          <colorPalette type="map">{"Active":#53A051,"Degraded":#F8BE34,"Inactive":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ===================== Agent inventory ===================== -->
+  <row>
+    <panel>
+      <title>Forwarder versions</title>
+      <table>
+        <search>
+          <query>
+            index=_internal sourcetype=splunkd group=tcpin_connections
+            | eval serverName = if(isnull(hostname), sourceIp, hostname)
+            | stats latest(version) AS SplunkVersion, latest(arch) AS Architecture,
+                    latest(os) AS OS, latest(_time) AS last_seen
+                    BY serverName
+            | eval last_seen = strftime(last_seen, "%F %T"),
+                   version_current = if(SplunkVersion = "9.4.3", "current", "UPGRADE NEEDED")
+            | sort serverName
+            | table serverName, SplunkVersion, version_current, OS, Architecture, last_seen
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <format type="color" field="version_current">
+          <colorPalette type="map">{"current":#53A051,"UPGRADE NEEDED":#F8BE34}</colorPalette>
+        </format>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Data volume per forwarder</title>
+      <chart>
+        <search>
+          <query>
+            index=_internal sourcetype=splunkd group=tcpin_connections
+            | eval sourceIp = if(isnull(hostname), sourceHost, hostname)
+            | timechart span=30m sum(eval(kb/1024)) AS MB BY sourceIp
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">MB received</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ================= Ingestion by index / sourcetype ==================== -->
+  <row>
+    <panel>
+      <title>Ingestion volume per index</title>
+      <chart>
+        <search>
+          <query>
+            | tstats count WHERE index=linux OR index=linux_audit OR index=linux_logs
+                                OR index=windows OR index=windows_audit OR index=windows_logs
+                                OR index=sysmon OR index=db_input
+              BY index, _time span=30m
+            | timechart span=30m sum(count) BY index
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.axisTitleY.text">Events</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Sourcetype coverage per host</title>
+      <table>
+        <search>
+          <query>
+            | tstats count AS events, latest(_time) AS last_event
+              WHERE index=linux OR index=linux_audit OR index=windows OR index=windows_audit
+              BY host, index, sourcetype
+            | eval last_event = strftime(last_event, "%F %T")
+            | sort host, index, - events
+            | rename host AS "Host", index AS "Index", sourcetype AS "Sourcetype",
+                     events AS "Events", last_event AS "Last event"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="count">25</option>
+        <option name="drilldown">cell</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ===================== Install integrity ===================== -->
+  <row>
+    <panel>
+      <title>Installed-file integrity check status</title>
+      <table>
+        <search>
+          <query>
+            index=_internal sourcetype=splunkd component=FileIntegrityChecker
+            | stats latest(_time) AS last_check, count AS messages,
+                    count(eval(log_level="ERROR" OR log_level="WARN")) AS failures
+            | eval "Splunk version" = "9.4.3",
+                   "Check status"   = "enabled",
+                   "Results valid?" = if(failures = 0, "true", "false"),
+                   "Last check"     = strftime(last_check, "%F %T")
+            | table "Splunk version", "Check status", "Results valid?", "Last check", failures
+          </query>
+          <earliest>-7d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <format type="color" field="Results valid?">
+          <colorPalette type="map">{"true":#53A051,"false":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Installed files failing the integrity check</title>
+      <html>
+        <p style="margin:0 0 8px 0;color:#5c6773">
+          Files shipped by the Splunk Enterprise package that have been
+          modified or are missing since installation. An entry means the
+          on-disk file no longer matches the signed manifest - expected for
+          files this deployment intentionally edits
+          (<code>etc/system/local/*.conf</code>), worth investigating
+          anywhere else.
+        </p>
+      </html>
+      <table>
+        <search>
+          <query><![CDATA[
+            index=_internal sourcetype=splunkd component=FileIntegrityChecker
+            (log_level=WARN OR log_level=ERROR)
+            | rex field=_raw "(?:File|Path)\s*[=:]\s*'?(?<file_path>[^'\s,]+)"
+            | rex field=_raw "(?<integrity_issue>missing|modified|checksum mismatch|disabled)"
+            | eval shared_object = if(match(file_path, "\.(so|dll)$"), "yes", "no"),
+                   intentional   = if(match(file_path, "etc/system/local|etc/apps/siem_core"), "yes - deployed config", "no")
+            | stats latest(_time) AS last_seen BY file_path, integrity_issue, shared_object, intentional
+            | eval last_seen = strftime(last_seen, "%F %T")
+            | sort intentional, file_path
+            | rename file_path AS "File path", integrity_issue AS "Issue",
+                     shared_object AS "Shared object", intentional AS "Expected?",
+                     last_seen AS "Last seen"
+          ]]></query>
+          <earliest>-7d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <format type="color" field="Expected?">
+          <colorPalette type="map">{"no":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ================= Host posture from the scripted inputs ============== -->
+  <row>
+    <panel>
+      <title>Endpoint posture</title>
+      <table>
+        <search>
+          <query>
+            (index=linux_audit sourcetype=linux:hosthealth) OR (index=windows_audit sourcetype=windows:hosthealth)
+            | stats latest(cpu_used_pct) AS cpu, latest(mem_used_pct) AS mem,
+                    latest(disk_used_pct) AS disk, latest(uptime_secs) AS uptime,
+                    latest(uf_version) AS uf_version, latest(os) AS os,
+                    latest(_time) AS last_report
+                    BY host
+            | eval uptime_days = round(uptime / 86400, 1),
+                   last_report = strftime(last_report, "%F %T")
+            | table host, os, cpu, mem, disk, uptime_days, uf_version, last_report
+            | rename host AS "Host", os AS "OS", cpu AS "CPU %", mem AS "Memory %",
+                     disk AS "Disk %", uptime_days AS "Uptime (days)",
+                     uf_version AS "UF version", last_report AS "Last report"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <format type="color" field="CPU %">
+          <colorPalette type="minMidMax" maxColor="#DC4E41" midColor="#F8BE34" minColor="#FFFFFF"></colorPalette>
+          <scale type="minMidMax" minValue="0" midValue="70" maxValue="100"></scale>
+        </format>
+        <format type="color" field="Disk %">
+          <colorPalette type="minMidMax" maxColor="#DC4E41" midColor="#F8BE34" minColor="#FFFFFF"></colorPalette>
+          <scale type="minMidMax" minValue="0" midValue="80" maxValue="100"></scale>
+        </format>
+      </table>
+    </panel>
+  </row>
+</form>

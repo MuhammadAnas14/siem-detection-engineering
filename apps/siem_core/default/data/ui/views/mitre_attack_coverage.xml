@@ -1,0 +1,242 @@
+<form version="1.1" theme="light">
+  <label>MITRE ATT&amp;CK Coverage</label>
+  <description>
+    What this deployment detects, what it does not, and which rules have
+    actually proven themselves against real activity. Built from this app's
+    own mapping lookup rather than a premium add-on, so it works on a stock
+    Splunk Enterprise install.
+  </description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="tr">
+      <label>Alert activity window</label>
+      <default>
+        <earliest>-7d@d</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="radio" token="scope_tok" searchWhenChanged="true">
+      <label>Display scope</label>
+      <choice value="*">All rules</choice>
+      <choice value="severity IN (&quot;high&quot;,&quot;critical&quot;)">High and critical only</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+
+  <!-- ===================== Coverage headline ===================== -->
+  <row>
+    <panel>
+      <title>Tactics covered</title>
+      <single>
+        <search>
+          <query>
+            | inputlookup mitre_attack_lookup
+            | where mitre_tactic_id != "NA"
+            | stats dc(mitre_tactic_id) AS tactics
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="underLabel">of 14 ATT&amp;CK Enterprise tactics</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Techniques covered</title>
+      <single>
+        <search>
+          <query>
+            | inputlookup mitre_attack_lookup
+            | where mitre_technique_id != "NA"
+            | stats dc(mitre_technique_id) AS techniques
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="underLabel">distinct techniques</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Detection rules</title>
+      <single>
+        <search>
+          <query>
+            | rest /servicesNS/-/siem_core/saved/searches
+            | search eai:acl.app=siem_core title!="default"
+            | stats count AS rules
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="underLabel">deployed</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Rules that fired</title>
+      <single>
+        <search>
+          <query>index=siem_summary $scope_tok$ | stats dc(rule_id) AS fired</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="underLabel">in the selected window</option>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0xdc4e41","0xf8be34","0x53a051"]</option>
+        <option name="rangeValues">[5,15]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- ==================== Technique coverage matrix ==================== -->
+  <row>
+    <panel>
+      <title>Technique coverage</title>
+      <html>
+        <p style="margin:0 0 8px 0;color:#5c6773">
+          Each row is a technique this deployment detects. Rows marked
+          <b>active</b> have fired in the selected window and are therefore
+          validated end to end; rows marked <b>deployed, no activity</b> are
+          enabled but unproven - they may be correct and simply idle, or they
+          may be silently broken. That distinction is the difference between
+          claimed coverage and demonstrated coverage.
+        </p>
+      </html>
+      <table>
+        <search>
+          <query>
+            | inputlookup mitre_attack_lookup
+            | where mitre_tactic_id != "NA"
+            | join type=left rule_id
+                [ search index=siem_summary $scope_tok$
+                  | stats count AS alerts, latest(_time) AS last_fired BY rule_id ]
+            | eval alerts      = coalesce(alerts, 0),
+                   last_fired  = if(isnull(last_fired), "never", strftime(last_fired, "%F %T")),
+                   status      = if(alerts &gt; 0, "ACTIVE - validated", "deployed, no activity"),
+                   technique   = mitre_technique_id . " " . mitre_technique
+            | sort mitre_tactic_id, - alerts
+            | table mitre_tactic_id, mitre_tactic, technique, rule_id, rule_name,
+                    severity, alerts, last_fired, status, data_source
+            | rename mitre_tactic_id AS "Tactic ID", mitre_tactic AS "Tactic",
+                     technique AS "Technique", rule_id AS "Rule",
+                     rule_name AS "Detection", severity AS "Severity",
+                     alerts AS "Alerts", last_fired AS "Last fired",
+                     status AS "Status", data_source AS "Data source"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="count">30</option>
+        <option name="drilldown">cell</option>
+        <format type="color" field="Severity">
+          <colorPalette type="map">{"critical":#D6453D,"high":#E8663C,"medium":#F2B01E,"low":#4A90D9}</colorPalette>
+        </format>
+        <format type="color" field="Status">
+          <colorPalette type="map">{"ACTIVE - validated":#53A051,"deployed, no activity":#C3CBD4}</colorPalette>
+        </format>
+        <format type="color" field="Alerts">
+          <colorPalette type="minMidMax" maxColor="#DC4E41" midColor="#F8BE34" minColor="#FFFFFF"></colorPalette>
+          <scale type="minMidMax"></scale>
+        </format>
+      </table>
+      <drilldown>
+        <link target="_blank">
+          search?q=search index%3Dsiem_summary rule_id%3D"$row.Rule|s$"&amp;earliest=$tr.earliest$&amp;latest=$tr.latest$
+        </link>
+      </drilldown>
+    </panel>
+  </row>
+
+  <!-- ===================== Coverage by tactic ===================== -->
+  <row>
+    <panel>
+      <title>Detection coverage by tactic</title>
+      <chart>
+        <search>
+          <query>
+            | inputlookup mitre_attack_lookup
+            | where mitre_tactic_id != "NA"
+            | stats dc(mitre_technique_id) AS techniques, count AS rules
+                    BY mitre_tactic
+            | sort - rules
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.axisTitleX.text">Count</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Alert volume by tactic</title>
+      <chart>
+        <search>
+          <query>
+            index=siem_summary $scope_tok$
+            | lookup mitre_attack_lookup rule_id OUTPUT mitre_tactic
+            | where isnotnull(mitre_tactic) AND mitre_tactic != "Operational"
+            | timechart span=1d count BY mitre_tactic
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ===================== Gap analysis ===================== -->
+  <row>
+    <panel>
+      <title>Coverage gaps - ATT&amp;CK Enterprise tactics with no detection deployed</title>
+      <html>
+        <p style="margin:0 0 8px 0;color:#5c6773">
+          Computed live from the mapping lookup rather than maintained by
+          hand, so it stays accurate as rules are added. Each gap is a
+          telemetry problem before it is a detection problem - closing one
+          means onboarding a data source, not writing a smarter search.
+        </p>
+      </html>
+      <table>
+        <search>
+          <query>
+            | makeresults
+            | eval tactic_id = split("TA0043,TA0042,TA0001,TA0002,TA0003,TA0004,TA0005,TA0006,TA0007,TA0008,TA0009,TA0011,TA0010,TA0040", ",")
+            | mvexpand tactic_id
+            | eval tactic = case(
+                tactic_id="TA0043","Reconnaissance",     tactic_id="TA0042","Resource Development",
+                tactic_id="TA0001","Initial Access",     tactic_id="TA0002","Execution",
+                tactic_id="TA0003","Persistence",        tactic_id="TA0004","Privilege Escalation",
+                tactic_id="TA0005","Defense Evasion",    tactic_id="TA0006","Credential Access",
+                tactic_id="TA0007","Discovery",          tactic_id="TA0008","Lateral Movement",
+                tactic_id="TA0009","Collection",         tactic_id="TA0011","Command and Control",
+                tactic_id="TA0010","Exfiltration",       tactic_id="TA0040","Impact")
+            | join type=left tactic_id
+                [ | inputlookup mitre_attack_lookup
+                  | where mitre_tactic_id != "NA"
+                  | stats count AS rules, values(rule_id) AS rule_ids BY mitre_tactic_id
+                  | rename mitre_tactic_id AS tactic_id ]
+            | eval rules = coalesce(rules, 0),
+                   coverage = if(rules &gt; 0, "covered", "GAP"),
+                   rule_ids = if(isnull(rule_ids), "-", mvjoin(rule_ids, ", "))
+            | table tactic_id, tactic, rules, rule_ids, coverage
+            | rename tactic_id AS "Tactic ID", tactic AS "Tactic",
+                     rules AS "Rules", rule_ids AS "Detections", coverage AS "Coverage"
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">14</option>
+        <option name="drilldown">none</option>
+        <format type="color" field="Coverage">
+          <colorPalette type="map">{"covered":#53A051,"GAP":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</form>

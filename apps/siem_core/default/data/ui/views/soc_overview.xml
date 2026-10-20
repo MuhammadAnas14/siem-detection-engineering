@@ -1,0 +1,286 @@
+<form version="1.1" theme="light">
+  <label>SOC Overview</label>
+  <description>
+    The shift view. Headline counts first, then what is driving them, then a
+    triage queue ordered by how close each alert is to breaching its SLA.
+  </description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="tr">
+      <label>Time range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="dropdown" token="sev_tok" searchWhenChanged="true">
+      <label>Minimum severity</label>
+      <choice value="*">All</choice>
+      <choice value="severity IN (&quot;medium&quot;,&quot;high&quot;,&quot;critical&quot;)">Medium and above</choice>
+      <choice value="severity IN (&quot;high&quot;,&quot;critical&quot;)">High and above</choice>
+      <choice value="severity=&quot;critical&quot;">Critical only</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+    <input type="multiselect" token="host_tok" searchWhenChanged="true">
+      <label>Host</label>
+      <fieldForLabel>host</fieldForLabel>
+      <fieldForValue>host</fieldForValue>
+      <search>
+        <query>| tstats values(host) AS host WHERE index=linux OR index=windows BY index | mvexpand host | dedup host | sort host</query>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </search>
+      <valuePrefix>host="</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter> OR </delimiter>
+      <default>*</default>
+      <prefix>(</prefix>
+      <suffix>)</suffix>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+
+  <!-- ===================== Headline counters ===================== -->
+  <row>
+    <panel>
+      <title>Failed logins (Windows + Linux)</title>
+      <single>
+        <search>
+          <query>
+            (eventtype=windows_failed_logon OR eventtype=linux_failed_logon) $host_tok$
+            | stats count
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="rangeValues">[50,200,500]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">all</option>
+      </single>
+      <drilldown>
+        <link target="_blank">search?q=search eventtype%3Dwindows_failed_logon OR eventtype%3Dlinux_failed_logon&amp;earliest=$tr.earliest$&amp;latest=$tr.latest$</link>
+      </drilldown>
+    </panel>
+
+    <panel>
+      <title>Privilege escalation events</title>
+      <single>
+        <search>
+          <query>eventtype=windows_special_privileges $host_tok$ | `exclude_service_accounts` | stats count</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[10,50]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Malware detections</title>
+      <single>
+        <search>
+          <query>eventtype=defender_detection $host_tok$ | stats count</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0x53a051","0xf1813f","0xdc4e41"]</option>
+        <option name="rangeValues">[1,5]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Alerts fired</title>
+      <single>
+        <search>
+          <query>index=siem_summary $sev_tok$ | stats count</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[20,100]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Hosts reporting</title>
+      <single>
+        <search>
+          <query>| tstats dc(host) AS hosts WHERE index=linux OR index=windows OR index=linux_audit OR index=windows_audit</query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="underLabel">forwarding now</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- ===================== Alert volume ===================== -->
+  <row>
+    <panel>
+      <title>Alert volume by severity over time</title>
+      <chart>
+        <search>
+          <query>
+            index=siem_summary $sev_tok$
+            | timechart span=1h count BY severity
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.fieldColors">{"critical":0xd6453d,"high":0xe8663c,"medium":0xf2b01e,"low":0x4a90d9}</option>
+        <option name="charting.axisTitleY.text">Alerts</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Top firing detection rules</title>
+      <chart>
+        <search>
+          <query>
+            index=siem_summary $sev_tok$
+            | stats count BY rule_id
+            | lookup mitre_attack_lookup rule_id OUTPUT rule_name
+            | eval rule = rule_id . " - " . rule_name
+            | sort - count
+            | head 10
+            | fields rule, count
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">Alerts</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ===================== Authentication ===================== -->
+  <row>
+    <panel>
+      <title>Windows logon outcome by account</title>
+      <chart>
+        <search>
+          <query>
+            `windows_index` sourcetype="WinEventLog:Security" (EventCode=4624 OR EventCode=4625) $host_tok$
+            | eval user=coalesce(user, Account_Name)
+            | eval result=if(EventCode=4624, "success", "failure")
+            | stats count BY user, result
+            | sort - count
+            | head 20
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.axisTitleX.text">Account name</option>
+        <option name="charting.axisTitleY.text">Count</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">-45</option>
+        <option name="charting.fieldColors">{"success":0x53a051,"failure":0xdc4e41}</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Failed logins by source address</title>
+      <table>
+        <search>
+          <query>
+            (eventtype=windows_failed_logon OR eventtype=linux_failed_logon) $host_tok$
+            | eval user=coalesce(user, Account_Name),
+                   src=coalesce(src, Source_Network_Address, "unknown")
+            | stats count AS attempts, dc(user) AS accounts_targeted,
+                    values(host) AS targets, latest(_time) AS last_attempt
+                    BY src
+            | eval last_attempt=strftime(last_attempt, "%F %T")
+            | sort - attempts
+            | head 20
+            | rename src AS "Source", attempts AS "Attempts",
+                     accounts_targeted AS "Accounts targeted",
+                     targets AS "Target hosts", last_attempt AS "Last attempt"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="drilldown">cell</option>
+        <option name="count">20</option>
+        <format type="color" field="Attempts">
+          <colorPalette type="minMidMax" maxColor="#DC4E41" midColor="#F8BE34" minColor="#FFFFFF"></colorPalette>
+          <scale type="minMidMax"></scale>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <!-- ===================== Linux + triage queue ===================== -->
+  <row>
+    <panel>
+      <title>Linux authentication outcome over time</title>
+      <chart>
+        <search>
+          <query>
+            `linux_index` sourcetype=linux_secure $host_tok$
+            ("Failed password" OR "Accepted password" OR "Accepted publickey" OR "authentication failure")
+            | eval result=if(match(_raw, "Accepted"), "success", "failure")
+            | timechart span=30m count BY result
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.fieldColors">{"success":0x53a051,"failure":0xdc4e41}</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Triage queue - ordered by severity, then age against SLA</title>
+      <table>
+        <search>
+          <query>
+            index=siem_summary $sev_tok$
+            | lookup mitre_attack_lookup rule_id OUTPUT rule_name, mitre_tactic, mitre_technique_id
+            | lookup severity_lookup severity OUTPUT sla_minutes, escalation
+            | eval age_minutes = round((now() - _time) / 60, 1),
+                   sla_state = if(age_minutes > sla_minutes, "BREACHED", "within SLA")
+            | sort - severity_id, - age_minutes
+            | head 50
+            | eval triggered = strftime(_time, "%F %T")
+            | table triggered, rule_id, rule_name, host, user, severity,
+                    age_minutes, sla_minutes, sla_state, mitre_tactic,
+                    mitre_technique_id, escalation
+            | rename triggered AS "Triggered", rule_id AS "Rule",
+                     rule_name AS "Detection", severity AS "Severity",
+                     age_minutes AS "Age (min)", sla_minutes AS "SLA (min)",
+                     sla_state AS "SLA", mitre_tactic AS "ATT&amp;CK tactic",
+                     mitre_technique_id AS "Technique", escalation AS "Escalation"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="count">25</option>
+        <option name="drilldown">cell</option>
+        <format type="color" field="Severity">
+          <colorPalette type="map">{"critical":#D6453D,"high":#E8663C,"medium":#F2B01E,"low":#4A90D9}</colorPalette>
+        </format>
+        <format type="color" field="SLA">
+          <colorPalette type="map">{"BREACHED":#D6453D,"within SLA":#53A051}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</form>

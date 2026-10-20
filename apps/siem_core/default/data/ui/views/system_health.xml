@@ -1,0 +1,260 @@
+<form version="1.1" theme="light">
+  <label>System Health</label>
+  <description>
+    Platform capacity and whether the detection content is actually running.
+    The Monitoring Console covers most of this, but an app-local view means
+    analysts see it without a separate role grant, and the scheduler panel at
+    the bottom answers the question the Monitoring Console does not: are the
+    rules executing, or quietly being skipped?
+  </description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="tr">
+      <label>Time range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <!-- ============ Throughput, licence and search concurrency ============ -->
+  <row>
+    <panel>
+      <title>Indexing rate</title>
+      <single>
+        <search>
+          <query>
+            index=_internal source=*metrics.log group=thruput name=index_thruput
+            | timechart span=1m avg(kbps) AS kbps
+            | stats avg(kbps) AS kbps
+            | eval kbps = round(kbps, 2)
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="unit">KB/s</option>
+        <option name="underLabel">Total</option>
+        <option name="numberPrecision">0.00</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Licence usage today</title>
+      <single>
+        <search>
+          <query>
+            index=_internal source=*license_usage.log type=Usage
+            | stats sum(b) AS bytes
+            | eval pct = round(bytes / 1024 / 1024 / 1024 / 5 * 100, 1)
+            | fields pct
+          </query>
+          <earliest>@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="unit">%</option>
+        <option name="underLabel">of the daily quota</option>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[80,95]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Concurrent searches</title>
+      <single>
+        <search>
+          <query>
+            index=_internal source=*metrics.log group=search_concurrency
+            | timechart span=1m max(active_hist_searches) AS historical,
+                                max(active_realtime_searches) AS realtime
+            | stats max(historical) AS h, max(realtime) AS r
+            | eval total = h + r
+            | fields total
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="underLabel">Searches (peak)</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Disk usage - $SPLUNK_DB</title>
+      <single>
+        <search>
+          <query>
+            | dbinspect index=linux OR index=windows OR index=linux_audit OR index=windows_audit
+            | stats sum(sizeOnDiskMB) AS mb
+            | eval gb = round(mb / 1024, 2)
+            | fields gb
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="unit">GB</option>
+        <option name="underLabel">on $SPLUNK_DB</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- ======================== CPU and memory ======================== -->
+  <row>
+    <panel>
+      <title>CPU usage</title>
+      <chart>
+        <search>
+          <query>
+            index=_introspection component=Hostwide
+            | timechart span=5m
+                avg(data.cpu_system_pct) AS "System CPU %",
+                avg(data.cpu_user_pct)   AS "User CPU %"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.axisTitleY.text">% CPU</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>CPU usage by process</title>
+      <chart>
+        <search>
+          <query>
+            index=_introspection component=PerProcess
+            | eval proc = case(
+                  like(data.process, "splunkd%"),  "splunkd server",
+                  like(data.process, "python%"),   "search",
+                  like(data.process, "splunk-web%"), "Splunk Web",
+                  true(), "other")
+            | stats avg(data.pct_cpu) AS cpu BY proc
+            | sort - cpu
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Memory usage</title>
+      <chart>
+        <search>
+          <query>
+            index=_introspection component=Hostwide
+            | timechart span=5m avg(data.mem_used) AS "Memory used (MB)"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleY.text">MB used</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <title>Memory usage by process</title>
+      <chart>
+        <search>
+          <query>
+            index=_introspection component=PerProcess
+            | eval proc = case(
+                  like(data.process, "splunkd%"),    "splunkd server",
+                  like(data.process, "python%"),     "search",
+                  like(data.process, "splunk-web%"), "Splunk Web",
+                  true(), "other")
+            | stats avg(data.mem_used) AS mem BY proc
+            | sort - mem
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- =================== Index growth and retention ====================== -->
+  <row>
+    <panel>
+      <title>Index growth and retention headroom</title>
+      <table>
+        <search>
+          <query>
+            | rest /services/data/indexes
+            | search title IN ("linux","linux_audit","windows","windows_audit","sysmon","dns_logs","web_logs","db_input","siem_summary")
+            | eval size_gb       = round(currentDBSizeMB / 1024, 2),
+                   max_size_gb   = round(maxTotalDataSizeMB / 1024, 2),
+                   pct_full      = round(currentDBSizeMB / maxTotalDataSizeMB * 100, 1),
+                   retention_days= round(frozenTimePeriodInSecs / 86400, 0),
+                   oldest_event  = strftime(minTime, "%F %T"),
+                   newest_event  = strftime(maxTime, "%F %T")
+            | table title, totalEventCount, size_gb, max_size_gb, pct_full,
+                    retention_days, oldest_event, newest_event
+            | rename title AS "Index", totalEventCount AS "Events",
+                     size_gb AS "Size (GB)", max_size_gb AS "Max (GB)",
+                     pct_full AS "% full", retention_days AS "Retention (days)",
+                     oldest_event AS "Oldest event", newest_event AS "Newest event"
+            | sort - "Size (GB)"
+          </query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">15</option>
+        <format type="color" field="% full">
+          <colorPalette type="minMidMax" maxColor="#DC4E41" midColor="#F8BE34" minColor="#FFFFFF"></colorPalette>
+          <scale type="minMidMax" minValue="0" midValue="70" maxValue="100"></scale>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <!-- =================== Scheduler and alert health ====================== -->
+  <row>
+    <panel>
+      <title>Detection rule execution health</title>
+      <table>
+        <search>
+          <query>
+            index=_internal sourcetype=scheduler app=siem_core
+            | stats count AS runs,
+                    count(eval(status="success"))   AS succeeded,
+                    count(eval(status="skipped"))   AS skipped,
+                    count(eval(status="continued")) AS deferred,
+                    avg(run_time) AS avg_runtime,
+                    latest(_time) AS last_run
+                    BY savedsearch_name
+            | eval avg_runtime = round(avg_runtime, 2),
+                   last_run    = strftime(last_run, "%F %T"),
+                   health      = case(skipped &gt; 0, "SKIPPING",
+                                      runs = 0,     "NEVER RAN",
+                                      true(),       "healthy")
+            | sort health, savedsearch_name
+            | rename savedsearch_name AS "Detection rule", runs AS "Runs",
+                     succeeded AS "Succeeded", skipped AS "Skipped",
+                     deferred AS "Deferred", avg_runtime AS "Avg runtime (s)",
+                     last_run AS "Last run", health AS "Health"
+          </query>
+          <earliest>$tr.earliest$</earliest>
+          <latest>$tr.latest$</latest>
+        </search>
+        <option name="count">25</option>
+        <option name="drilldown">none</option>
+        <format type="color" field="Health">
+          <colorPalette type="map">{"healthy":#53A051,"SKIPPING":#F8BE34,"NEVER RAN":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</form>

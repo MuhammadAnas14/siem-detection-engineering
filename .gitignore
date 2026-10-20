@@ -1,0 +1,38 @@
+# ---------------------------------------------------------------------------
+# Credentials and site-specific values
+# ---------------------------------------------------------------------------
+# Holds the admin password, SMTP relay and database credentials.
+install/splunk.env
+
+# DB Connect writes the encrypted credential back into this file in place;
+# only the template belongs in version control.
+dbconnect/identities.conf
+
+# ---------------------------------------------------------------------------
+# Runtime state
+# ---------------------------------------------------------------------------
+# App-local overrides written by the deploy script or by analysts tuning rules
+# through the UI. Deliberately scoped to apps/ - etc/system/local holds the
+# tracked indexer and forwarder configuration and must NOT be ignored.
+apps/*/local/
+apps/*/metadata/local.meta
+
+# Backups taken by the install scripts before overwriting a conf file
+*.orig
+
+# ---------------------------------------------------------------------------
+# Build artefacts
+# ---------------------------------------------------------------------------
+dist/
+*.tgz
+*.spl
+
+# ---------------------------------------------------------------------------
+# Editor / OS
+# ---------------------------------------------------------------------------
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+*.swp
